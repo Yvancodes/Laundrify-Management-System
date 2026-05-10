@@ -6,18 +6,11 @@ import java.awt.event.KeyEvent;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
-import java.io.FileOutputStream;
-import java.io.File; 
 import java.util.Stack;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet; 
 import java.util.UUID;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import com.itextpdf.text.Document;
-import com.itextpdf.text.Paragraph;
-import com.itextpdf.text.pdf.PdfWriter;
 
 public class Laundrify extends JFrame {
 
@@ -176,6 +169,106 @@ public class Laundrify extends JFrame {
         rightPanel.add(rightBottomPanel, BorderLayout.SOUTH);
     }
 
+    // ==========================================
+    // NEW FEATURE: DYNAMIC TOUCHPAD UI
+    // ==========================================
+    private Double showTouchpadDialog(String title, boolean isPayment) {
+        JDialog dialog = new JDialog(this, title, true); 
+        dialog.setSize(400, 550);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout(15, 15));
+        dialog.getContentPane().setBackground(WATER_BLUE_BG);
+        
+        // 1. The Display Screen
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.setOpaque(false);
+        topPanel.setBorder(new EmptyBorder(15, 15, 0, 15));
+        
+        JTextField displayField = new JTextField();
+        displayField.setFont(new Font("Segoe UI", Font.BOLD, 36));
+        displayField.setHorizontalAlignment(JTextField.RIGHT);
+        displayField.setBorder(BorderFactory.createCompoundBorder(new LineBorder(SUDSY_BORDER, 2), new EmptyBorder(10, 10, 10, 10)));
+        topPanel.add(displayField, BorderLayout.CENTER);
+        dialog.add(topPanel, BorderLayout.NORTH);
+
+        // 2. The Keyboard Area
+        JPanel centerPanel = new JPanel(new BorderLayout(10, 10));
+        centerPanel.setOpaque(false);
+        centerPanel.setBorder(new EmptyBorder(0, 15, 10, 15));
+
+        // --- QUICK BILLS PANEL (Only shows for Payment) ---
+        if (isPayment) {
+            JPanel billsPanel = new JPanel(new GridLayout(2, 3, 8, 8));
+            billsPanel.setOpaque(false);
+            int[] bills = {20, 50, 100, 200, 500, 1000};
+            
+            for (int bill : bills) {
+                JButton btnBill = new JButton("₱" + bill);
+                btnBill.setFont(new Font("Segoe UI", Font.BOLD, 16));
+                btnBill.setBackground(new Color(144, 238, 144)); 
+                btnBill.setForeground(NAVY_TEXT);
+                btnBill.setFocusPainted(false);
+                btnBill.addActionListener(e -> displayField.setText(String.valueOf(bill)));
+                billsPanel.add(btnBill);
+            }
+            centerPanel.add(billsPanel, BorderLayout.NORTH);
+        }
+
+        // --- NUMPAD PANEL ---
+        JPanel numpadPanel = new JPanel(new GridLayout(4, 3, 8, 8));
+        numpadPanel.setOpaque(false);
+        String[] keys = {"7", "8", "9", "4", "5", "6", "1", "2", "3", "C", "0", "."};
+        
+        for (String key : keys) {
+            JButton btnKey = new JButton(key);
+            btnKey.setFont(new Font("Segoe UI", Font.BOLD, 24));
+            btnKey.setBackground(CRISP_WHITE);
+            btnKey.setForeground(NAVY_TEXT);
+            btnKey.setFocusPainted(false);
+            
+            btnKey.addActionListener(e -> {
+                if (key.equals("C")) {
+                    displayField.setText(""); 
+                } else {
+                    displayField.setText(displayField.getText() + key); 
+                }
+            });
+            numpadPanel.add(btnKey);
+        }
+        centerPanel.add(numpadPanel, BorderLayout.CENTER);
+        dialog.add(centerPanel, BorderLayout.CENTER);
+
+        // 3. The Confirm Button
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+        bottomPanel.setOpaque(false);
+        bottomPanel.setBorder(new EmptyBorder(0, 15, 15, 15));
+        
+        JButton btnConfirm = new JButton("CONFIRM");
+        btnConfirm.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        btnConfirm.setBackground(NAVY_TEXT);
+        btnConfirm.setForeground(CRISP_WHITE);
+        btnConfirm.setPreferredSize(new Dimension(0, 50));
+        
+        final Double[] finalResult = {null}; 
+        
+        btnConfirm.addActionListener(e -> {
+            try {
+                if (!displayField.getText().isEmpty()) {
+                    finalResult[0] = Double.parseDouble(displayField.getText());
+                    dialog.dispose(); 
+                }
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(dialog, "Invalid Number Format", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        
+        bottomPanel.add(btnConfirm, BorderLayout.CENTER);
+        dialog.add(bottomPanel, BorderLayout.SOUTH);
+
+        dialog.setVisible(true); 
+        return finalResult[0]; 
+    }
+
     private void addServiceButton(JPanel panel, String btnText, String itemText) {
         JButton btn = new JButton(btnText);
         styleButton(btn, CRISP_WHITE, NAVY_TEXT);
@@ -238,38 +331,34 @@ public class Laundrify extends JFrame {
     }
 
     private void addWeightService() {
-        String input = JOptionPane.showInputDialog(this, "Enter Laundry Weight (in kg):", "Weight Entry", JOptionPane.QUESTION_MESSAGE);
-        if (input != null && !input.trim().isEmpty()) {
-            try {
-                double weight = Double.parseDouble(input);
-                
-                if (weight <= 0) {
-                    JOptionPane.showMessageDialog(this, "Weight must be greater than zero.", "Invalid Weight", JOptionPane.WARNING_MESSAGE);
-                    return; 
-                }
-                
-                double pricePerKg = 0.00;
-                
-                try (Connection conn = DatabaseConnection.getConnection();
-                     PreparedStatement pstmt = conn.prepareStatement("SELECT price FROM prices WHERE service_name = 'Weight (per kg)'")) {
-                    ResultSet rs = pstmt.executeQuery();
-                    if (rs.next()) pricePerKg = rs.getDouble("price");
-                    else { JOptionPane.showMessageDialog(this, "Price for 'Weight' not set."); return; }
-                } catch (Exception ex) { return; }
-
-                double totalCost = weight * pricePerKg;
-                String entryName = String.format("Weight (%.1f kg)", weight);
-                
-                itemHistory.push(entryName);   
-                priceHistory.push(totalCost);  
-                
-                receiptArea.append(String.format("%s - ₱%.2f\n", entryName, totalCost)); 
-                
-                currentTotal += totalCost;
-                totalField.setText(String.format("%.2f", currentTotal));
-            } catch (NumberFormatException e) {
-                JOptionPane.showMessageDialog(this, "Please enter a valid positive number.", "Invalid Input", JOptionPane.ERROR_MESSAGE);
+        // USING NEW TOUCHPAD: false = No Peso Bills
+        Double weight = showTouchpadDialog("Enter Laundry Weight (kg)", false);
+        
+        if (weight != null) {
+            if (weight <= 0) {
+                JOptionPane.showMessageDialog(this, "Weight must be greater than zero.", "Invalid Weight", JOptionPane.WARNING_MESSAGE);
+                return; 
             }
+            
+            double pricePerKg = 0.00;
+            
+            try (Connection conn = DatabaseConnection.getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement("SELECT price FROM prices WHERE service_name = 'Weight (per kg)'")) {
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) pricePerKg = rs.getDouble("price");
+                else { JOptionPane.showMessageDialog(this, "Price for 'Weight' not set."); return; }
+            } catch (Exception ex) { return; }
+
+            double totalCost = weight * pricePerKg;
+            String entryName = String.format("Weight (%.1f kg)", weight);
+            
+            itemHistory.push(entryName);   
+            priceHistory.push(totalCost);  
+            
+            receiptArea.append(String.format("%s - ₱%.2f\n", entryName, totalCost)); 
+            
+            currentTotal += totalCost;
+            totalField.setText(String.format("%.2f", currentTotal));
         }
     }
 
@@ -339,15 +428,17 @@ public class Laundrify extends JFrame {
             if (confirm != JOptionPane.YES_OPTION) { return; }
         }
 
-        String input = JOptionPane.showInputDialog(this, String.format("Total Due: ₱%.2f\nEnter Amount Tendered:", currentTotal), "Payment", JOptionPane.QUESTION_MESSAGE);
-        if (input != null && !input.trim().isEmpty()) {
-            try {
-                double amountPaid = Double.parseDouble(input);
-                if (amountPaid < currentTotal) { JOptionPane.showMessageDialog(this, "Insufficient payment.", "Error", JOptionPane.ERROR_MESSAGE); return; }
-                double change = amountPaid - currentTotal;
-                JOptionPane.showMessageDialog(this, String.format("Payment successful!\n\nChange Due: ₱%.2f", change), "Complete", JOptionPane.INFORMATION_MESSAGE);
-                saveTransactionAndPrint(amountPaid, change);
-            } catch (NumberFormatException e) { JOptionPane.showMessageDialog(this, "Invalid amount.", "Error", JOptionPane.ERROR_MESSAGE); }
+        // USING NEW TOUCHPAD: true = Show Quick Peso Bills
+        Double amountPaid = showTouchpadDialog(String.format("Total Due: ₱%.2f", currentTotal), true);
+        
+        if (amountPaid != null) {
+            if (amountPaid < currentTotal) { 
+                JOptionPane.showMessageDialog(this, "Insufficient payment.", "Error", JOptionPane.ERROR_MESSAGE); 
+                return; 
+            }
+            double change = amountPaid - currentTotal;
+            JOptionPane.showMessageDialog(this, String.format("Payment successful!\n\nChange Due: ₱%.2f", change), "Complete", JOptionPane.INFORMATION_MESSAGE);
+            saveTransactionAndPrint(amountPaid, change);
         }
     }
 
@@ -369,18 +460,16 @@ public class Laundrify extends JFrame {
             e.printStackTrace(); 
         }
 
-        // Generates the actual PDF file via FileGeneration class[cite: 1]
         FileGeneration.generateReceipt(invoiceNumber, customerName, customerPhone, itemHistory, priceHistory, currentTotal, amountPaid, change);
         
-        // UPDATED: Now shows the specific Invoice Number in the popup
         JOptionPane.showMessageDialog(this, 
             "Transaction Complete!\n\nInvoice No: " + invoiceNumber + 
             "\nReceipt has been saved in the 'receipt' folder.", 
             "Success", JOptionPane.INFORMATION_MESSAGE);
         
-        // Resets the screen for the next order
         clearReceipt(); 
     }
+    
     private void logout() {
         int confirm = JOptionPane.showConfirmDialog(this, "Are you sure you want to log out?", "Confirm Logout", JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
